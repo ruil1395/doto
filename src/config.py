@@ -1,72 +1,65 @@
 import os
 import logging
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Загрузка .env
 load_dotenv()
 
+# Пути
 BASE_DIR = Path(__file__).parent.parent
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN not found! Create .env file with BOT_TOKEN=your_token")
+# Токен (обязательно!)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+if not BOT_TOKEN or ":" not in BOT_TOKEN:
+    logging.error("Invalid BOT_TOKEN!")
+    # Не выходим, чтобы логи были видны
 
-ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+# Админы
+ADMIN_IDS = []
+try:
+    ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+except:
+    pass
 
+# Логирование
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(LOGS_DIR / "bot.log", encoding='utf-8'),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
-
 logger = logging.getLogger(__name__)
 
+# Сообщения
 MESSAGES = {
-    "start": """
-🎮 *Dota 2 Counter Bot*
+    "start": """🎮 *Dota 2 Counter Bot*
 
-Привет, {name}! Я помогу с контрпиками, билдами и предсказаниями.
+Привет, {name}!
 
 *Команды:*
 /hero [имя] — информация о герое
-/counter [имя] — контрпики из базы
-/counters [имя] — статистические контрпики (API)
-/build [имя] — рекомендуемый билд
-/stats [имя] — актуальная статистика
-/meta — текущая мета
 /predict [A] vs [B] — предсказать победителя
-/search [запрос] — поиск героя
+/stats [имя] — статистика
+/meta — текущая мета
 /list — список героев
-/help — помощь
 
-Просто напиши имя героя — и я найду всё о нём!
-""",
-    "help": """
-📚 *Помощь по командам:*
+Просто напиши имя героя!""",
 
-*/hero [имя]* — полная информация о герое
-*/counter [имя]* — контрпики из базы знаний
-*/counters [имя]* — статистические контрпики (OpenDota API)
-*/build [имя]* — рекомендуемый билд
-*/stats [имя]* — актуальная статистика (винрейт, тир, мета-скор)
-*/meta* — текущая мета (топ пиков, винрейтов, тренды)
-*/predict [A] vs [B]* — ML-предсказание победителя
-*/search [запрос]* — поиск по части имени
-*/list* — список всех героев
-*/about* — информация о боте
+    "help": """📚 *Команды:*
 
-*Примеры:*
-• `/hero kez`
-• `/stats muerta`
-• `/predict kez void slardar vs muerta ember tide`
-• `/meta`
+/hero [имя] — информация о герое
+/counter [имя] — контрпики
+/predict [A] vs [B] — ML-предсказание
+/stats [имя] — винрейт, тир
+/meta — топ пиков
+/search [запрос] — поиск
+/list — все герои""",
 
-💡 *Совет:* Можно просто написать имя героя без команды!
-"""
+    "hero_not_found": "❌ Герой '{query}' не найден"
 }
