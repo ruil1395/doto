@@ -1,16 +1,18 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from config import BOT_TOKEN, logger
+from handlers.commands import CommandHandlers
+from handlers.heroes import HeroHandlers
+from handlers.stats import StatsHandlers
+from handlers.predict import PredictionHandlers
+from handlers.callbacks import CallbackHandlers
+from handlers.errors import ErrorHandlers
 
-from src.config import BOT_TOKEN, logger
-from src.handlers.commands import CommandHandlers
-from src.handlers.heroes import HeroHandlers
-from src.handlers.stats import StatsHandlers
-from src.handlers.predict import PredictionHandlers
-from src.handlers.callbacks import CallbackHandlers
-from src.handlers.errors import ErrorHandlers
 
-
-def create_application() -> Application:
-    logger.info("Creating bot with ML prediction support...")
+def create_application():
+    logger.info("Creating bot application...")
+    
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN is empty!")
     
     application = Application.builder().token(BOT_TOKEN).build()
     
@@ -36,7 +38,7 @@ def create_application() -> Application:
     # Предсказания
     application.add_handler(CommandHandler("predict", predict_handlers.predict_quick))
     
-    # Callback
+    # Callbacks
     application.add_handler(CallbackQueryHandler(CallbackHandlers.handle_callback))
     
     # Текст
@@ -45,5 +47,5 @@ def create_application() -> Application:
     # Ошибки
     application.add_error_handler(ErrorHandlers.error_handler)
     
-    logger.info("Bot created successfully")
+    logger.info("Bot application created successfully")
     return application
