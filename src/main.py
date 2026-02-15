@@ -1,46 +1,64 @@
+#!/usr/bin/env python3
 import asyncio
-import signal
+import logging
 import sys
+import os
 
-from src.config import logger
-from src.bot import create_application
+# Настройка путей
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Настройка логирования сразу
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
-def signal_handler(signum, frame):
-    logger.info(f"Received signal {signum}, shutting down...")
-    sys.exit(0)
+try:
+    from config import BOT_TOKEN, logger as config_logger
+    from bot import create_application
+except Exception as e:
+    logger.error(f"Import error: {e}")
+    sys.exit(1)
 
 
 async def main():
-    logger.info("Starting Dota 2 Counter Bot with ML...")
+    logger.info("=" * 50)
+    logger.info("Dota 2 Counter Bot starting...")
+    logger.info("=" * 50)
     
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    application = create_application()
-    
-    logger.info("Starting polling...")
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling(allowed_updates=["message", "callback_query"])
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN not set!")
+        sys.exit(1)
     
     try:
+        application = create_application()
+        await application.initialize()
+        await application.start()
+        
+        logger.info("Bot is running!")
+        
+        # Bothost.ru требует keep-alive через polling
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"]
+        )
+        
+        # Бесконечный цикл
         while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Stopping bot...")
-    finally:
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
-        logger.info("Bot stopped")
+            await asyncio.sleep(60)
+            
+    except Exception as e:
+        logger.error(f"Runtime error: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        pass
+        logger.info("Bot stopped")
     except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
+        logger.critical(f"Fatal: {e}", exc_info=True)
         sys.exit(1)
