@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Dota 2 Counter Bot v2.0 - All-in-One Version
-Telegram бот с ML-предсказаниями матчей, контрпиками и статистикой
+Dota 2 Counter Bot v2.1 - Extended Heroes + ML Predictor
 """
 
 import asyncio
@@ -10,19 +9,17 @@ import sys
 import os
 import random
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Any
-from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Tuple
+from datetime import datetime
 from pathlib import Path
 from enum import Enum
 
-# Telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
     CallbackQueryHandler, ContextTypes, filters
 )
 
-# Загрузка .env (если есть)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -38,7 +35,6 @@ try:
 except:
     pass
 
-# Логирование
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -46,7 +42,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ==================== МОДЕЛИ ДАННЫХ ====================
+# ==================== МОДЕЛИ ====================
 
 @dataclass
 class HeroStats:
@@ -135,11 +131,12 @@ class MatchPrediction:
         elif self.confidence >= 50:
             return "🟡 Средняя"
         else:
-            return "🟢 Низкая (равные шансы)"
+            return "🟢 Низкая"
 
-# ==================== БАЗА ДАННЫХ ГЕРОЕВ ====================
+# ==================== РАСШИРЕННАЯ БАЗА ГЕРОЕВ (30+ героев) ====================
 
 HEROES_DATABASE = {
+    # CARRY
     "kez": Hero(
         id="kez",
         name="Kez",
@@ -147,26 +144,20 @@ HEROES_DATABASE = {
         primary_attr="agi",
         attack_type="Melee",
         roles=["Carry", "Escape", "Nuker"],
-        description="Мобильный agility-carry с высоким взрывным уроном и двумя стилями боя.",
-        strengths=["Высокая мобильность", "Взрывной урон", "Два режима атаки", "Сильный в мид-гейме"],
-        weaknesses=["Зависим от предметов", "Сложная механика", "Уязвим к контролю", "Проблемы против иллюзий"],
+        description="Мобильный agility-carry с двумя стилями боя.",
+        strengths=["Высокая мобильность", "Взрывной урон", "Два режима атаки"],
+        weaknesses=["Зависим от предметов", "Сложная механика", "Проблемы против иллюзий"],
         counters=HeroCounters(
-            strong_against=["Sniper", "Drow Ranger", "Crystal Maiden", "Shadow Shaman"],
             weak_against=["Phantom Lancer", "Chaos Knight", "Tidehunter", "Axe", "Puck"],
-            counter_items=["Ghost Scepter", "Eul's Scepter", "Heaven's Halberd", "Force Staff", "Black King Bar", "Silver Edge"],
-            core_items=["Echo Sabre / Disperser", "Black King Bar", "Daedalus / Bloodthorn", "Satanic", "Butterfly"],
-            countered_by={
-                "heroes": ["Phantom Lancer", "Meepo", "Naga Siren"],
-                "items": ["Silver Edge", "Bloodthorn", "Orchid Malevolence"],
-                "description": "Покупайте Silver Edge для брейка пассивки, Bloodthorn для true strike."
-            }
+            counter_items=["Ghost Scepter", "Eul's Scepter", "Heaven's Halberd", "Force Staff", "Silver Edge"],
+            countered_by={"heroes": ["Phantom Lancer", "Meepo", "Naga Siren"], "description": "Silver Edge брейкает пассивку"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Quelling Blade", "Circlet", "3x Iron Branch"],
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet", "Branches"],
             early_game=["Power Treads", "Magic Wand", "Echo Sabre"],
             mid_game=["Black King Bar", "Disperser", "Crystalys"],
             late_game=["Daedalus", "Satanic", "Butterfly", "Swift Blink"],
-            situational=["Bloodthorn", "Monkey King Bar", "Abyssal Blade", "Nullifier"]
+            situational=["Bloodthorn", "Monkey King Bar", "Abyssal Blade"]
         ),
         stats=HeroStats(win_rate=52.3, pick_rate=15.2, tier="A")
     ),
@@ -178,30 +169,125 @@ HEROES_DATABASE = {
         primary_attr="int",
         attack_type="Ranged",
         roles=["Carry", "Nuker", "Disabler"],
-        description="Гибридный carry с магическим и физическим уроном. Сильный лейт-гейм carry с формой призрака.",
-        strengths=["Огромный урон в лейте", "Форма призрака", "Смешанный тип урона", "Сильная ультимейт-форма"],
-        weaknesses=["Медленный фарм", "Уязвима до BKB", "Зависит от позиционирования", "Контрится silence"],
+        description="Гибридный carry с формой призрака.",
+        strengths=["Огромный урон в лейте", "Форма призрака", "Смешанный урон"],
+        weaknesses=["Медленный фарм", "Уязвима до BKB", "Контрится silence"],
         counters=HeroCounters(
-            strong_against=["Terrorblade", "Naga Siren", "Spectre", "Anti-Mage"],
             weak_against=["Anti-Mage", "Nyx Assassin", "Silencer", "Phantom Assassin"],
-            counter_items=["Bloodthorn", "Silver Edge", "Orchid Malevolence", "Scythe of Vyse", "Black King Bar", "Manta Style"],
-            core_items=["Maelstrom / Mjollnir", "Black King Bar", "Gleipnir", "Daedalus", "Satanic", "Bloodthorn"],
-            countered_by={
-                "heroes": ["Anti-Mage", "Silencer", "Nyx Assassin"],
-                "items": ["Bloodthorn", "Silver Edge", "Orchid Malevolence", "Scythe of Vyse"],
-                "description": "Silencer ult отключает способности. Bloodthorn для true strike против уклонения."
-            }
+            counter_items=["Bloodthorn", "Silver Edge", "Orchid Malevolence", "Scythe of Vyse"],
+            countered_by={"heroes": ["Anti-Mage", "Silencer"], "description": "Silencer отключает способности"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Circlet", "Branches"],
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
             early_game=["Power Treads", "Magic Wand", "Maelstrom"],
             mid_game=["Black King Bar", "Gleipnir", "Dragon Lance"],
             late_game=["Daedalus", "Satanic", "Bloodthorn", "Hurricane Pike"],
-            situational=["Monkey King Bar", "Silver Edge", "Refresher Orb"]
+            situational=["Monkey King Bar", "Silver Edge"]
         ),
         stats=HeroStats(win_rate=51.8, pick_rate=12.5, tier="A")
     ),
     
+    "phantom_lancer": Hero(
+        id="phantom_lancer",
+        name="Phantom Lancer",
+        localized_name="Phantom Lancer",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Escape", "Pusher"],
+        description="Carry с армией иллюзий. Сильнейший лейт.",
+        strengths=["Армия иллюзий", "Высокая мобильность", "Сложно найти настоящего"],
+        weaknesses=["Слаб рано", "Уязвим к AoE", "Требует фарма"],
+        counters=HeroCounters(
+            weak_against=["Axe", "Earthshaker", "Sven", "Medusa"],
+            counter_items=["Battle Fury", "Mjollnir", "Radiance", "Shiva's Guard"],
+            countered_by={"heroes": ["Axe", "Earthshaker"], "description": "AoE урон уничтожает иллюзии"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Quelling Blade", "Circlet", "Branches"],
+            early_game=["Power Treads", "Wraith Band", "Diffusal Blade"],
+            mid_game=["Manta Style", "Heart of Tarrasque", "Butterfly"],
+            late_game=["Satanic", "Bloodthorn", "Skadi", "Boots of Travel"],
+            situational=["Black King Bar", "Silver Edge"]
+        ),
+        stats=HeroStats(win_rate=53.2, pick_rate=9.8, tier="S")
+    ),
+    
+    "anti_mage": Hero(
+        id="anti_mage",
+        name="Anti-Mage",
+        localized_name="Anti-Mage",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Escape", "Nuker"],
+        description="Быстрый фармер с мана-бёрном.",
+        strengths=["Быстрый фарм", "Мана Break", "Blink для escape"],
+        weaknesses=["Слаб рано", "Требует много фарма", "Уязвим к контролю"],
+        counters=HeroCounters(
+            weak_against=["Phantom Assassin", "Legion Commander", "Meepo", "Chaos Knight"],
+            counter_items=["Silver Edge", "Bloodthorn", "Orchid Malevolence", "Scythe of Vyse"],
+            countered_by={"heroes": ["Phantom Assassin", "Legion Commander"], "description": "Legion Duel игнорирует BKB"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Shield"],
+            early_game=["Power Treads", "Magic Wand", "Ring of Health"],
+            mid_game=["Battle Fury", "Manta Style", "Black King Bar"],
+            late_game=["Butterfly", "Abyssal Blade", "Satanic"],
+            situational=["Monkey King Bar", "Bloodthorn"]
+        ),
+        stats=HeroStats(win_rate=49.5, pick_rate=12.1, tier="B")
+    ),
+    
+    "spectre": Hero(
+        id="spectre",
+        name="Spectre",
+        localized_name="Spectre",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Durable", "Escape"],
+        description="Керри с глобальным присутствием. Ультимейт Haunt разрывает файты.",
+        strengths=["Глобальное присутствие", "Отражение урона", "Сильный лейт"],
+        weaknesses=["Медленный фарм", "Слаб рано", "Зависит от Radiance"],
+        counters=HeroCounters(
+            weak_against=["Anti-Mage", "Necrophos", "Viper", "Omniknight"],
+            counter_items=["Silver Edge", "Diffusal Blade", "Scythe of Vyse"],
+            countered_by={"heroes": ["Anti-Mage", "Necrophos"], "description": "Anti-Mage сжигает ману, Necrophos замедляет"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Shield"],
+            early_game=["Power Treads", "Magic Wand", "Urn of Shadows"],
+            mid_game=["Radiance", "Manta Style", "Blade Mail"],
+            late_game=["Heart of Tarrasque", "Butterfly", "Abyssal Blade", "Refresher Orb"],
+            situational=["Silver Edge", "Bloodthorn", "Nullifier"]
+        ),
+        stats=HeroStats(win_rate=51.2, pick_rate=11.5, tier="A")
+    ),
+    
+    "faceless_void": Hero(
+        id="faceless_void",
+        name="Faceless Void",
+        localized_name="Faceless Void",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Initiator", "Disabler", "Escape"],
+        description="Керри с Chronosphere — лучшим станом в игре.",
+        strengths=["Chronosphere", "Time Walk для escape", "Бэкдор потенциал"],
+        weaknesses=["Сильно зависит от ультимейта", "Слаб без предметов", "Контрится"],
+        counters=HeroCounters(
+            weak_against=["Axe", "Silencer", "Viper", "Winter Wyvern"],
+            counter_items=["Force Staff", "Eul's Scepter", "Ghost Scepter", "Aeon Disk"],
+            countered_by={"heroes": ["Axe", "Silencer"], "description": "Axe Call в хроносфере, Silencer ульт"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Power Treads", "Magic Wand", "Mask of Madness"],
+            mid_game=["Battle Fury", "Black King Bar", "Maelstrom"],
+            late_game=["Butterfly", "Satanic", "Abyssal Blade", "Refresher Orb"],
+            situational=["Silver Edge", "Monkey King Bar", "Bloodthorn"]
+        ),
+        stats=HeroStats(win_rate=50.8, pick_rate=13.2, tier="A")
+    ),
+    
+    # MID
     "void_spirit": Hero(
         id="void_spirit",
         name="Void Spirit",
@@ -209,25 +295,19 @@ HEROES_DATABASE = {
         primary_attr="int",
         attack_type="Melee",
         roles=["Carry", "Escape", "Nuker", "Disabler"],
-        description="Мобильный mid-герой с высоким взрывным уроном и манипуляцией пространством.",
-        strengths=["Высокая мобильность", "Взрывной магический урон", "Сложно поймать", "Сильный в дайвах"],
-        weaknesses=["Уязвим к silence", "Нужна мана", "Падает в лейте", "Требует механики"],
+        description="Мобильный mid с высоким взрывным уроном.",
+        strengths=["Высокая мобильность", "Взрывной магический урон", "Сложно поймать"],
+        weaknesses=["Уязвим к silence", "Нужна мана", "Падает в лейте"],
         counters=HeroCounters(
-            strong_against=["Sniper", "Shadow Fiend", "Storm Spirit", "Ember Spirit"],
             weak_against=["Silencer", "Doom", "Bloodseeker", "Anti-Mage"],
-            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade", "Eul's Scepter", "Black King Bar"],
-            core_items=["Bottle", "Kaya and Sange", "Orchid Malevolence / Bloodthorn", "Black King Bar", "Aghanim's Scepter", "Refresher Orb"],
-            countered_by={
-                "heroes": ["Silencer", "Doom", "Bloodseeker"],
-                "items": ["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade"],
-                "description": "Ловите Orchid/Bloodthorn когда он использует способности."
-            }
+            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade"],
+            countered_by={"heroes": ["Silencer", "Doom"], "description": "Silence отключает способности"}
         ),
         builds=HeroBuild(
             starting_items=["Tango", "Circlet", "Branches", "Faerie Fire"],
             early_game=["Bottle", "Power Treads", "Magic Wand", "Kaya"],
             mid_game=["Orchid Malevolence", "Black King Bar", "Sange and Kaya"],
-            late_game=["Bloodthorn", "Refresher Orb", "Octarine Core", "Aghanim's Scepter"],
+            late_game=["Bloodthorn", "Refresher Orb", "Octarine Core"],
             situational=["Eul's Scepter", "Shiva's Guard", "Scythe of Vyse"]
         ),
         stats=HeroStats(win_rate=50.5, pick_rate=18.3, tier="A")
@@ -240,19 +320,13 @@ HEROES_DATABASE = {
         primary_attr="agi",
         attack_type="Melee",
         roles=["Carry", "Escape", "Nuker", "Disabler", "Initiator"],
-        description="Мобильный carry с физическим и магическим уроном. Сложный в освоении, но невероятно сильный.",
-        strengths=["Высочайшая мобильность", "Смешанный урон", "Силен на всех стадиях", "Remnant для escape/initiate"],
-        weaknesses=["Уязвим к silence", "Требует маны", "Сложная механика", "Контрится hard disable"],
+        description="Мобильный carry с физическим и магическим уроном.",
+        strengths=["Высочайшая мобильность", "Смешанный урон", "Силен на всех стадиях"],
+        weaknesses=["Уязвим к silence", "Требует маны", "Сложная механика"],
         counters=HeroCounters(
-            strong_against=["Nature's Prophet", "Anti-Mage", "Broodmother", "Tinker"],
             weak_against=["Silencer", "Faceless Void", "Storm Spirit", "Void Spirit"],
-            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade", "Silver Edge", "Eul's Scepter"],
-            core_items=["Bottle", "Phase Boots", "Maelstrom / Mjollnir", "Black King Bar", "Daedalus", "Octarine Core"],
-            countered_by={
-                "heroes": ["Silencer", "Faceless Void", "Storm Spirit"],
-                "items": ["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse"],
-                "description": "Silencer и Faceless Void контрят его мобильность."
-            }
+            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade"],
+            countered_by={"heroes": ["Silencer", "Faceless Void"], "description": "Silencer и Faceless Void контрят мобильность"}
         ),
         builds=HeroBuild(
             starting_items=["Tango", "Circlet", "Branches", "Faerie Fire"],
@@ -264,6 +338,57 @@ HEROES_DATABASE = {
         stats=HeroStats(win_rate=51.2, pick_rate=16.7, tier="S")
     ),
     
+    "invoker": Hero(
+        id="invoker",
+        name="Invoker",
+        localized_name="Invoker",
+        primary_attr="uni",
+        attack_type="Ranged",
+        roles=["Carry", "Nuker", "Disabler", "Escape", "Pusher"],
+        description="Самый сложный герой с 10 способностями.",
+        strengths=["Огромный урон", "Много способностей", "Сильный на всех стадиях"],
+        weaknesses=["Сложная механика", "Уязвим к ганкам", "Нужна мана"],
+        counters=HeroCounters(
+            weak_against=["Anti-Mage", "Nyx Assassin", "Silencer", "Pugna"],
+            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Black King Bar"],
+            countered_by={"heroes": ["Anti-Mage", "Nyx Assassin"], "description": "Anti-Mage сжигает ману, Nyx взрывает ману"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Circlet", "Branches", "Faerie Fire"],
+            early_game=["Null Talisman", "Boots of Speed", "Magic Wand"],
+            mid_game=["Aghanim's Scepter", "Octarine Core", "Black King Bar"],
+            late_game=["Refresher Orb", "Shiva's Guard", "Scythe of Vyse", "Bloodthorn"],
+            situational=["Linken's Sphere", "Eul's Scepter", "Blink Dagger"]
+        ),
+        stats=HeroStats(win_rate=49.8, pick_rate=14.5, tier="A")
+    ),
+    
+    "storm_spirit": Hero(
+        id="storm_spirit",
+        name="Storm Spirit",
+        localized_name="Storm Spirit",
+        primary_attr="int",
+        attack_type="Ranged",
+        roles=["Carry", "Escape", "Nuker", "Initiator", "Disabler"],
+        description="Мобильный маг с Ball Lightning.",
+        strengths=["Бесконечная мобильность", "Высокий урон", "Соло убийства"],
+        weaknesses=["Зависим от Bloodstone", "Уязвим к silence", "Нужна мана"],
+        counters=HeroCounters(
+            weak_against=["Anti-Mage", "Silencer", "Doom", "Nyx Assassin"],
+            counter_items=["Orchid Malevolence", "Bloodthorn", "Scythe of Vyse", "Abyssal Blade"],
+            countered_by={"heroes": ["Anti-Mage", "Silencer"], "description": "Silence и мана-бёрн контрят"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Circlet", "Branches", "Faerie Fire"],
+            early_game=["Null Talisman", "Boots of Speed", "Magic Wand"],
+            mid_game=["Bloodstone", "Black King Bar", "Kaya and Sange"],
+            late_game=["Bloodthorn", "Shiva's Guard", "Scythe of Vyse", "Refresher Orb"],
+            situational=["Linken's Sphere", "Octarine Core", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=48.5, pick_rate=10.2, tier="B")
+    ),
+    
+    # OFFLANE
     "slardar": Hero(
         id="slardar",
         name="Slardar",
@@ -271,22 +396,16 @@ HEROES_DATABASE = {
         primary_attr="str",
         attack_type="Melee",
         roles=["Carry", "Durable", "Initiator", "Disabler", "Escape"],
-        description="Сильный инициатор с минус броней и мобильностью. Отличный дайвер.",
-        strengths=["Сильная инициация", "Минус броня", "Высокая мобильность", "Bash против крипов"],
-        weaknesses=["Уязвим к kiting'у", "Проблемы против иллюзий", "Требует Blink", "Слаб без предметов"],
+        description="Сильный инициатор с минус броней.",
+        strengths=["Сильная инициация", "Минус броня", "Высокая мобильность"],
+        weaknesses=["Уязвим к kiting'у", "Проблемы против иллюзий", "Требует Blink"],
         counters=HeroCounters(
-            strong_against=["Alchemist", "Anti-Mage", "Spectre", "Wraith King"],
             weak_against=["Phantom Lancer", "Terrorblade", "Naga Siren", "Tinker"],
-            counter_items=["Force Staff", "Ghost Scepter", "Eul's Scepter", "Glimmer Cape", "Silver Edge", "Diffusal Blade"],
-            core_items=["Phase Boots", "Blink Dagger", "Black King Bar", "Aghanim's Scepter", "Assault Cuirass", "Shiva's Guard"],
-            countered_by={
-                "heroes": ["Phantom Lancer", "Terrorblade", "Anti-Mage"],
-                "items": ["Silver Edge", "Bloodthorn", "Diffusal Blade"],
-                "description": "Silver Edge брейкает пассивку. PL/TB не боятся минус брони."
-            }
+            counter_items=["Force Staff", "Ghost Scepter", "Eul's Scepter", "Silver Edge"],
+            countered_by={"heroes": ["Phantom Lancer", "Terrorblade"], "description": "Silver Edge брейкает пассивку"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Quelling Blade", "Shield"],
+            starting_items=["Tango", "Salve", "Quelling Blade", "Shield"],
             early_game=["Phase Boots", "Magic Wand", "Blink Dagger"],
             mid_game=["Black King Bar", "Aghanim's Scepter", "Force Staff"],
             late_game=["Assault Cuirass", "Shiva's Guard", "Lotus Orb", "Abyssal Blade"],
@@ -302,22 +421,16 @@ HEROES_DATABASE = {
         primary_attr="str",
         attack_type="Melee",
         roles=["Initiator", "Durable", "Disabler", "Nuker"],
-        description="Мощный танк с лучшим AoE контролем в игре (Ravage).",
-        strengths=["Ravage - лучший AoE стан", "Высокая живучесть", "Anchor Smash против крипов", "Сильный на всех стадиях"],
-        weaknesses=["Долгий кд на Ravage", "Уязвим к silence", "Мана зависимость", "Медленный фарм"],
+        description="Мощный танк с лучшим AoE контролем (Ravage).",
+        strengths=["Ravage — лучший AoE стан", "Высокая живучесть", "Anchor Smash"],
+        weaknesses=["Долгий кд на Ravage", "Уязвим к silence", "Медленный фарм"],
         counters=HeroCounters(
-            strong_against=["Phantom Assassin", "Anti-Mage", "Spectre", "Faceless Void"],
             weak_against=["Silencer", "Enigma", "Rubick", "Doom"],
-            counter_items=["Black King Bar", "Linken's Sphere", "Lotus Orb", "Guardian Greaves", "Silver Edge", "Diffusal Blade"],
-            core_items=["Arcane Boots", "Blink Dagger", "Black King Bar", "Refresher Orb", "Shiva's Guard", "Lotus Orb"],
-            countered_by={
-                "heroes": ["Silencer", "Enigma", "Rubick"],
-                "items": ["Silver Edge", "Diffusal Blade", "Abyssal Blade"],
-                "description": "Silencer ult, Enigma Black Hole — контрпики Ravage."
-            }
+            counter_items=["Black King Bar", "Linken's Sphere", "Lotus Orb", "Silver Edge"],
+            countered_by={"heroes": ["Silencer", "Enigma"], "description": "Silencer ульт, Enigma Black Hole"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Clarity", "Shield"],
+            starting_items=["Tango", "Salve", "Clarity", "Shield"],
             early_game=["Arcane Boots", "Magic Wand", "Blink Dagger"],
             mid_game=["Black King Bar", "Force Staff", "Mekansm"],
             late_game=["Refresher Orb", "Shiva's Guard", "Lotus Orb", "Guardian Greaves"],
@@ -326,6 +439,82 @@ HEROES_DATABASE = {
         stats=HeroStats(win_rate=50.1, pick_rate=10.2, tier="A")
     ),
     
+    "axe": Hero(
+        id="axe",
+        name="Axe",
+        localized_name="Axe",
+        primary_attr="str",
+        attack_type="Melee",
+        roles=["Initiator", "Durable", "Disabler", "Jungler"],
+        description="Инициатор с Berserker's Call и Culling Blade.",
+        strengths=["Мощный дизейбл", "True damage ульт", "Быстрый фарм леса"],
+        weaknesses=["Уязвим к магии", "Зависит от Blink", "Контрится"],
+        counters=HeroCounters(
+            weak_against=["Viper", "Venomancer", "Necrophos", "Pugna"],
+            counter_items=["Force Staff", "Ghost Scepter", "Eul's Scepter", "Glimmer Cape"],
+            countered_by={"heroes": ["Viper", "Venomancer"], "description": "Магический урон и замедление"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Stout Shield", "Iron Branch"],
+            early_game=["Tranquil Boots", "Magic Wand", "Blink Dagger"],
+            mid_game=["Black King Bar", "Blade Mail", "Force Staff"],
+            late_game=["Heart of Tarrasque", "Lotus Orb", "Aghanim's Scepter", "Shiva's Guard"],
+            situational=["Crimson Guard", "Pipe of Insight", "Heaven's Halberd"]
+        ),
+        stats=HeroStats(win_rate=51.5, pick_rate=12.8, tier="A")
+    ),
+    
+    "mars": Hero(
+        id="mars",
+        name="Mars",
+        localized_name="Mars",
+        primary_attr="str",
+        attack_type="Melee",
+        roles=["Carry", "Initiator", "Disabler", "Durable"],
+        description="Инициатор с Arena of Blood.",
+        strengths=["Сильный контроль", "Блокирование атак", "Высокий урон"],
+        weaknesses=["Уязвим к магии", "Зависит от ультимейта", "Мана-зависимый"],
+        counters=HeroCounters(
+            weak_against=["Viper", "Venomancer", "Lifestealer", "Riki"],
+            counter_items=["Force Staff", "Blink Dagger", "Eul's Scepter", "Black King Bar"],
+            countered_by={"heroes": ["Viper", "Lifestealer"], "description": "Rage игнорирует стан, Viper замедляет"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Phase Boots", "Magic Wand", "Blink Dagger"],
+            mid_game=["Black King Bar", "Desolator", "Aghanim's Scepter"],
+            late_game=["Satanic", "Assault Cuirass", "Daedalus", "Refresher Orb"],
+            situational=["Silver Edge", "Bloodthorn", "Heaven's Halberd"]
+        ),
+        stats=HeroStats(win_rate=50.2, pick_rate=11.3, tier="A")
+    ),
+    
+    "doom": Hero(
+        id="doom",
+        name="Doom",
+        localized_name="Doom",
+        primary_attr="str",
+        attack_type="Melee",
+        roles=["Carry", "Disabler", "Initiator", "Durable", "Nuker"],
+        description="Оффлейнер с Doom — сильнейшим silence в игре.",
+        strengths=["Doom отключает героя", "Быстрый фарм", "Танк"],
+        weaknesses=["Медленный", "Зависим от фарма", "Контрится Linken's"],
+        counters=HeroCounters(
+            weak_against=["Lifestealer", "Weaver", "Phantom Lancer", "Anti-Mage"],
+            counter_items=["Linken's Sphere", "Lotus Orb", "Black King Bar", "Aghanim's Scepter"],
+            countered_by={"heroes": ["Lifestealer", "Weaver"], "description": "Rage и Time Lapse снимают Doom"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Shield"],
+            early_game=["Phase Boots", "Magic Wand", "Hand of Midas"],
+            mid_game=["Black King Bar", "Shiva's Guard", "Aghanim's Scepter"],
+            late_game=["Refresher Orb", "Octarine Core", "Assault Cuirass", "Bloodthorn"],
+            situational=["Silver Edge", "Heaven's Halberd", "Lotus Orb"]
+        ),
+        stats=HeroStats(win_rate=49.2, pick_rate=8.7, tier="B")
+    ),
+    
+    # SUPPORTS
     "shadow_shaman": Hero(
         id="shadow_shaman",
         name="Shadow Shaman",
@@ -333,22 +522,16 @@ HEROES_DATABASE = {
         primary_attr="int",
         attack_type="Ranged",
         roles=["Support", "Pusher", "Disabler", "Nuker", "Initiator"],
-        description="Сильнейший пушер и дизейблер с длиннейшим станом в игре.",
-        strengths=["Длинный стан", "Мощный пуш", "Hex для дизейбла", "Сильный в ранней игре"],
-        weaknesses=["Очень хрупкий", "Медленный", "Зависим от позиционирования", "Легко убивается"],
+        description="Сильнейший пушер с длиннейшим станом.",
+        strengths=["Длинный стан", "Мощный пуш", "Hex для дизейбла"],
+        weaknesses=["Очень хрупкий", "Медленный", "Легко убивается"],
         counters=HeroCounters(
-            strong_against=["Morphling", "Anti-Mage", "Spectre", "Wraith King"],
             weak_against=["Pudge", "Clockwerk", "Spirit Breaker", "Night Stalker"],
-            counter_items=["Force Staff", "Glimmer Cape", "Ghost Scepter", "Black King Bar", "Lotus Orb", "Eul's Scepter"],
-            core_items=["Arcane Boots", "Aether Lens", "Aghanim's Scepter", "Glimmer Cape", "Force Staff", "Refresher Orb"],
-            countered_by={
-                "heroes": ["Pudge", "Clockwerk", "Spirit Breaker", "Night Stalker"],
-                "items": ["Force Staff", "Glimmer Cape", "Ghost Scepter"],
-                "description": "Покупайте мобильность чтобы спастись от гэпклоуеров."
-            }
+            counter_items=["Force Staff", "Glimmer Cape", "Ghost Scepter", "Black King Bar"],
+            countered_by={"heroes": ["Pudge", "Clockwerk"], "description": "Гэпклоуэры убивают"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Clarity", "Observer Ward", "Sentry Ward"],
+            starting_items=["Tango", "Salve", "Clarity", "Observer Ward", "Sentry Ward"],
             early_game=["Arcane Boots", "Magic Wand", "Wind Lace"],
             mid_game=["Aether Lens", "Glimmer Cape", "Aghanim's Scepter"],
             late_game=["Refresher Orb", "Octarine Core", "Force Staff", "Ghost Scepter"],
@@ -364,22 +547,16 @@ HEROES_DATABASE = {
         primary_attr="int",
         attack_type="Ranged",
         roles=["Support", "Nuker", "Disabler"],
-        description="Сильный support с мощным ультимейтом и полезными способностями для команды.",
-        strengths=["Chain Frost - разрыв в файтах", "Ice Armor - защита", "Sacrifice - контроль линии", "Сильный в ранней игре"],
-        weaknesses=["Хрупкий", "Мана зависимость", "Уязвим к мана-бёрну", "Chain Frost требует позиционирования"],
+        description="Support с Chain Frost — разрывом в файтах.",
+        strengths=["Chain Frost", "Ice Armor", "Sacrifice для контроля линии"],
+        weaknesses=["Хрупкий", "Мана зависимость", "Уязвим к мана-бёрну"],
         counters=HeroCounters(
-            strong_against=["Broodmother", "Chaos Knight", "Meepo", "Phantom Lancer"],
             weak_against=["Anti-Mage", "Nyx Assassin", "Pugna", "Morphling"],
-            counter_items=["Black King Bar", "Glimmer Cape", "Force Staff", "Lotus Orb", "Pipe of Insight", "Blade Mail"],
-            core_items=["Tranquil Boots", "Magic Wand", "Glimmer Cape", "Aghanim's Scepter", "Force Staff", "Ghost Scepter"],
-            countered_by={
-                "heroes": ["Anti-Mage", "Nyx Assassin", "Pugna"],
-                "items": ["Force Staff", "Glimmer Cape", "Ghost Scepter"],
-                "description": "Anti-Mage сжигает ману, Nyx взрывает Frost Blast."
-            }
+            counter_items=["Black King Bar", "Glimmer Cape", "Force Staff", "Lotus Orb"],
+            countered_by={"heroes": ["Anti-Mage", "Nyx Assassin"], "description": "Anti-Mage сжигает ману"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Mango", "Observer Ward"],
+            starting_items=["Tango", "Salve", "Mango", "Observer Ward"],
             early_game=["Tranquil Boots", "Magic Wand", "Wind Lace"],
             mid_game=["Glimmer Cape", "Force Staff", "Aghanim's Scepter"],
             late_game=["Octarine Core", "Refresher Orb", "Ghost Scepter", "Lotus Orb"],
@@ -395,22 +572,16 @@ HEROES_DATABASE = {
         primary_attr="int",
         attack_type="Ranged",
         roles=["Support", "Disabler", "Nuker", "Initiator"],
-        description="Сильный дизейблер с мощным ультимейтом и несколькими станами.",
+        description="Дизейблер с двумя станами и Finger of Death.",
         strengths=["Два disables", "Finger of Death", "Mana Drain", "Сильный в ганках"],
-        weaknesses=["Очень хрупкий", "Медленный", "Зависим от позиционирования", "Finger of Death имеет задержку"],
+        weaknesses=["Очень хрупкий", "Медленный", "Зависим от позиционирования"],
         counters=HeroCounters(
-            strong_against=["Morphling", "Anti-Mage", "Storm Spirit", "Wraith King"],
             weak_against=["Nyx Assassin", "Pudge", "Clockwerk", "Lifestealer"],
-            counter_items=["Force Staff", "Glimmer Cape", "Black King Bar", "Lotus Orb", "Linken's Sphere", "Ghost Scepter"],
-            core_items=["Tranquil Boots", "Blink Dagger", "Aether Lens", "Aghanim's Scepter", "Force Staff", "Glimmer Cape"],
-            countered_by={
-                "heroes": ["Nyx Assassin", "Pudge", "Clockwerk"],
-                "items": ["Force Staff", "Glimmer Cape", "Ghost Scepter"],
-                "description": "Nyx отражает Finger of Death. Pudge разрывает позиционирование."
-            }
+            counter_items=["Force Staff", "Glimmer Cape", "Black King Bar", "Lotus Orb"],
+            countered_by={"heroes": ["Nyx Assassin", "Pudge"], "description": "Nyx отражает Finger"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Clarity", "Observer Ward"],
+            starting_items=["Tango", "Salve", "Clarity", "Observer Ward"],
             early_game=["Tranquil Boots", "Magic Wand", "Wind Lace"],
             mid_game=["Blink Dagger", "Aether Lens", "Force Staff"],
             late_game=["Aghanim's Scepter", "Octarine Core", "Refresher Orb", "Glimmer Cape"],
@@ -419,66 +590,380 @@ HEROES_DATABASE = {
         stats=HeroStats(win_rate=47.8, pick_rate=13.5, tier="B")
     ),
     
-    "phantom_lancer": Hero(
-        id="phantom_lancer",
-        name="Phantom Lancer",
-        localized_name="Phantom Lancer",
-        primary_attr="agi",
+    "pudge": Hero(
+        id="pudge",
+        name="Pudge",
+        localized_name="Pudge",
+        primary_attr="str",
         attack_type="Melee",
-        roles=["Carry", "Escape", "Pusher", "Nuker"],
-        description="Carry, создающий армию иллюзий. Сильнейший лейт-гейм carry.",
-        strengths=["Армия иллюзий", "Высокая мобильность", "Сложно найти настоящего", "Невероятный лейт"],
-        weaknesses=["Слаб рано", "Уязвим к AoE", "Требует фарма", "Контрится item'ами"],
+        roles=["Disabler", "Initiator", "Durable", "Nuker"],
+        description="Гэпклоуэр с Meat Hook.",
+        strengths=["Meat Hook", "Dismember", "Высокое HP", "Фановый герой"],
+        weaknesses=["Зависит от хука", "Медленный", "Фидит если промахивается"],
         counters=HeroCounters(
-            strong_against=["Slardar", "Tidehunter", "Sven", "Ursa"],
-            weak_against=["Axe", "Earthshaker", "Sven", "Medusa"],
-            counter_items=["Battle Fury", "Mjollnir", "Radiance", "Shiva's Guard", "Gleipnir", "Dragon Lance"],
-            core_items=["Power Treads", "Diffusal Blade", "Manta Style", "Heart of Tarrasque", "Butterfly", "Satanic"],
-            countered_by={
-                "heroes": ["Axe", "Earthshaker", "Sven"],
-                "items": ["Battle Fury", "Mjollnir", "Radiance", "Shiva's Guard"],
-                "description": "AoE урон уничтожает иллюзии. Battle Fury лучший контр."
-            }
+            weak_against=["Vengeful Spirit", "Chen", "Kunkka", "Lifestealer"],
+            counter_items=["Force Staff", "Glimmer Cape", "Black King Bar", "Lotus Orb"],
+            countered_by={"heroes": ["Vengeful Spirit", "Lifestealer"], "description": "Rage игнорирует ульт, Venge свопает"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Quelling Blade", "Circlet", "Branches"],
-            early_game=["Power Treads", "Wraith Band", "Diffusal Blade"],
-            mid_game=["Manta Style", "Heart of Tarrasque", "Butterfly"],
-            late_game=["Satanic", "Bloodthorn", "Skadi", "Boots of Travel"],
-            situational=["Black King Bar", "Silver Edge", "Monkey King Bar"]
+            starting_items=["Tango", "Salve", "Gauntlets of Strength", "Iron Branch"],
+            early_game=["Tranquil Boots", "Magic Wand", "Soul Ring"],
+            mid_game=["Blink Dagger", "Black King Bar", "Aghanim's Scepter"],
+            late_game=["Heart of Tarrasque", "Lotus Orb", "Shiva's Guard", "Force Staff"],
+            situational=["Pipe of Insight", "Crimson Guard", "Heaven's Halberd"]
         ),
-        stats=HeroStats(win_rate=53.2, pick_rate=9.8, tier="S")
+        stats=HeroStats(win_rate=52.8, pick_rate=22.5, tier="S")
     ),
     
-    "anti_mage": Hero(
-        id="anti_mage",
-        name="Anti-Mage",
-        localized_name="Anti-Mage",
-        primary_attr="agi",
-        attack_type="Melee",
-        roles=["Carry", "Escape", "Nuker"],
-        description="Быстрый фармер с мана-бёрном. Сильнейший лейт-гейм carry против магов.",
-        strengths=["Быстрый фарм", "Мана Break против магов", "Blink для escape", "Сильный лейт"],
-        weaknesses=["Слаб рано", "Требует много фарма", "Уязвим к контролю", "Проблемы против силы"],
+    "crystal_maiden": Hero(
+        id="crystal_maiden",
+        name="Crystal Maiden",
+        localized_name="Crystal Maiden",
+        primary_attr="int",
+        attack_type="Ranged",
+        roles=["Support", "Disabler", "Nuker", "Jungler"],
+        description="Support с Arcane Aura для команды.",
+        strengths=["Arcane Aura — реген маны", "Freezing Field", "Сильный ранний гейм"],
+        weaknesses=["Очень медленная", "Хрупкая", "Легкая цель"],
         counters=HeroCounters(
-            strong_against=["Lich", "Lion", "Zeus", "Storm Spirit"],
-            weak_against=["Phantom Assassin", "Legion Commander", "Meepo", "Chaos Knight"],
-            counter_items=["Silver Edge", "Bloodthorn", "Orchid Malevolence", "Scythe of Vyse", "Legion Commander", "Phantom Assassin"],
-            core_items=["Power Treads", "Battle Fury", "Manta Style", "Butterfly", "Black King Bar", "Abyssal Blade"],
-            countered_by={
-                "heroes": ["Phantom Assassin", "Legion Commander", "Meepo"],
-                "items": ["Silver Edge", "Bloodthorn", "Orchid Malevolence", "Scythe of Vyse"],
-                "description": "Заканчивайте игру до 30 минуты. Legion Duel игнорирует BKB."
-            }
+            weak_against=["Bounty Hunter", "Riki", "Spirit Breaker", "Nyx Assassin"],
+            counter_items=["Force Staff", "Glimmer Cape", "Ghost Scepter", "Black King Bar"],
+            countered_by={"heroes": ["Bounty Hunter", "Riki"], "description": "Инвиз герои убивают легко"}
         ),
         builds=HeroBuild(
-            starting_items=["Tango", "Healing Salve", "Quelling Blade", "Shield"],
-            early_game=["Power Treads", "Magic Wand", "Ring of Health"],
-            mid_game=["Battle Fury", "Manta Style", "Black King Bar"],
-            late_game=["Butterfly", "Abyssal Blade", "Satanic", "Heart of Tarrasque"],
-            situational=["Monkey King Bar", "Bloodthorn", "Nullifier"]
+            starting_items=["Tango", "Salve", "Clarity", "Observer Ward"],
+            early_game=["Arcane Boots", "Magic Wand", "Wind Lace"],
+            mid_game=["Glimmer Cape", "Force Staff", "Aghanim's Scepter"],
+            late_game=["Black King Bar", "Ghost Scepter", "Aether Lens", "Lotus Orb"],
+            situational=["Blink Dagger", "Aeon Disk", "Eul's Scepter"]
         ),
-        stats=HeroStats(win_rate=49.5, pick_rate=12.1, tier="B")
+        stats=HeroStats(win_rate=48.2, pick_rate=9.8, tier="C")
+    ),
+    
+    "rubick": Hero(
+        id="rubick",
+        name="Rubick",
+        localized_name="Rubick",
+        primary_attr="int",
+        attack_type="Ranged",
+        roles=["Support", "Disabler", "Nuker"],
+        description="Support с Spell Steal — ворует способности.",
+        strengths=["Spell Steal", "Телекинезис", "Сильный против магов"],
+        weaknesses=["Хрупкий", "Зависит от вражеских способностей", "Сложный"],
+        counters=HeroCounters(
+            weak_against=["Silencer", "Nyx Assassin", "Bounty Hunter", "Riki"],
+            counter_items=["Force Staff", "Glimmer Cape", "Ghost Scepter", "Black King Bar"],
+            countered_by={"heroes": ["Silencer", "Nyx Assassin"], "description": "Silencer ульт, Nyx мана-бёрн"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Mango", "Observer Ward"],
+            early_game=["Arcane Boots", "Magic Wand", "Wind Lace"],
+            mid_game=["Blink Dagger", "Aether Lens", "Force Staff"],
+            late_game=["Aghanim's Scepter", "Octarine Core", "Refresher Orb", "Glimmer Cape"],
+            situational=["Black King Bar", "Ghost Scepter", "Lotus Orb"]
+        ),
+        stats=HeroStats(win_rate=49.5, pick_rate=8.2, tier="B")
+    ),
+    
+    # HARD CARRY
+    "terrorblade": Hero(
+        id="terrorblade",
+        name="Terrorblade",
+        localized_name="Terrorblade",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Pusher", "Nuker"],
+        description="Керри с Metamorphosis и иллюзиями.",
+        strengths=["Высокий урон", "Иллюзии", "Сильный пуш", "Reflection"],
+        weaknesses=["Слаб рано", "Зависит от Metamorphosis", "Контрится AoE"],
+        counters=HeroCounters(
+            weak_against=["Axe", "Earthshaker", "Sven", "Naga Siren"],
+            counter_items=["Battle Fury", "Mjollnir", "Radiance", "Shiva's Guard"],
+            countered_by={"heroes": ["Axe", "Earthshaker"], "description": "Axe Call, Earthshaker Echo Slam"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Dragon Lance", "Black King Bar", "Manta Style"],
+            late_game=["Satanic", "Butterfly", "Skadi", "Bloodthorn"],
+            situational=["Silver Edge", "Hurricane Pike", "Monkey King Bar"]
+        ),
+        stats=HeroStats(win_rate=50.5, pick_rate=10.8, tier="A")
+    ),
+    
+    "medusa": Hero(
+        id="medusa",
+        name="Medusa",
+        localized_name="Medusa",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Durable", "Disabler"],
+        description="Супер-лейт керри с Mana Shield.",
+        strengths=["Невероятный лейт", "Mana Shield", "Split Shot", "Stone Gaze"],
+        weaknesses=["Медленный фарм", "Слаб рано", "Зависит от предметов"],
+        counters=HeroCounters(
+            weak_against=["Anti-Mage", "Nyx Assassin", "Invoker", "Silencer"],
+            counter_items=["Diffusal Blade", "Necronomicon", "Mana Void", "Orchid Malevolence"],
+            countered_by={"heroes": ["Anti-Mage", "Nyx Assassin"], "description": "Мана-бёрн убивает"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Linken's Sphere", "Manta Style", "Skadi"],
+            late_game=["Butterfly", "Satanic", "Bloodthorn", "Refresher Orb"],
+            situational=["Silver Edge", "Monkey King Bar", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=51.8, pick_rate=9.5, tier="A")
+    ),
+    
+    "juggernaut": Hero(
+        id="juggernaut",
+        name="Juggernaut",
+        localized_name="Juggernaut",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Pusher", "Escape"],
+        description="Универсальный керри с Blade Fury и Omnislash.",
+        strengths=["Универсальный", "Быстрый фарм", "Healing Ward", "Omnislash"],
+        weaknesses=["Уязвим к контролю", "Omnislash контрится", "Средний лейт"],
+        counters=HeroCounters(
+            weak_against=["Axe", "Lion", "Shadow Shaman", "Ursa"],
+            counter_items=["Ghost Scepter", "Force Staff", "Eul's Scepter", "Heaven's Halberd"],
+            countered_by={"heroes": ["Axe", "Lion"], "description": "Axe Call, Lion Hex + Finger"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Phase Boots", "Magic Wand", "Wraith Band"],
+            mid_game=["Battle Fury", "Black King Bar", "Manta Style"],
+            late_game=["Satanic", "Butterfly", "Abyssal Blade", "Bloodthorn"],
+            situational=["Silver Edge", "Monkey King Bar", "Skadi"]
+        ),
+        stats=HeroStats(win_rate=50.2, pick_rate=14.8, tier="A")
+    ),
+    
+    "sven": Hero(
+        id="sven",
+        name="Sven",
+        localized_name="Sven",
+        primary_attr="str",
+        attack_type="Melee",
+        roles=["Carry", "Disabler", "Initiator", "Pusher"],
+        description="Керри с God's Strength и клеевом уроном.",
+        strengths=["Огромный урон", "God's Strength", "Storm Hammer", "Быстрый фарм"],
+        weaknesses=["Медленный", "Зависим от ультимейта", "Кайтится"],
+        counters=HeroCounters(
+            weak_against=["Viper", "Venomancer", "Drow Ranger", "Phantom Lancer"],
+            counter_items=["Force Staff", "Ghost Scepter", "Heaven's Halberd", "Eul's Scepter"],
+            countered_by={"heroes": ["Viper", "Phantom Lancer"], "description": "Замедление и иллюзии"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Power Treads", "Magic Wand", "Mask of Madness"],
+            mid_game=["Black King Bar", "Daedalus", "Sange and Yasha"],
+            late_game=["Satanic", "Butterfly", "Abyssal Blade", "Bloodthorn"],
+            situational=["Silver Edge", "Monkey King Bar", "Swift Blink"]
+        ),
+        stats=HeroStats(win_rate=49.8, pick_rate=11.2, tier="B")
+    ),
+    
+    "morphling": Hero(
+        id="morphling",
+        name="Morphling",
+        localized_name="Morphling",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Escape", "Nuker", "Disabler"],
+        description="Гибкий керри с Waveform и Morph.",
+        strengths=["Высокая мобильность", "Гибкость билдов", "Waveform", "Replicate"],
+        weaknesses=["Сложный", "Зависим от маны", "Уязвим к мана-бёрну"],
+        counters=HeroCounters(
+            weak_against=["Anti-Mage", "Nyx Assassin", "Invoker", "Silencer"],
+            counter_items=["Diffusal Blade", "Orchid Malevolence", "Scythe of Vyse"],
+            countered_by={"heroes": ["Anti-Mage", "Nyx Assassin"], "description": "Мана-бёрн убивает"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Linken's Sphere", "Manta Style"],
+            late_game=["Satanic", "Butterfly", "Skadi", "Bloodthorn"],
+            situational=["Silver Edge", "Monkey King Bar", "Ethereal Blade"]
+        ),
+        stats=HeroStats(win_rate=48.5, pick_rate=7.8, tier="B")
+    ),
+    
+    "gyrocopter": Hero(
+        id="gyrocopter",
+        name="Gyrocopter",
+        localized_name="Gyrocopter",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Nuker", "Disabler"],
+        description="Керри с Flak Cannon — AoE уроном.",
+        strengths=["Высокий AoE урон", "Flak Cannon", "Call Down", "Сильный в файтах"],
+        weaknesses=["Медленный", "Низкая дальность", "Зависим от предметов"],
+        counters=HeroCounters(
+            weak_against=["Phantom Assassin", "Storm Spirit", "Anti-Mage", "Nyx Assassin"],
+            counter_items=["Blade Mail", "Heaven's Halberd", "Ghost Scepter", "Force Staff"],
+            countered_by={"heroes": ["Phantom Assassin", "Storm Spirit"], "description": "Блинкеры убивают быстро"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Sange and Yasha", "Daedalus"],
+            late_game=["Satanic", "Butterfly", "Bloodthorn", "Swift Blink"],
+            situational=["Silver Edge", "Monkey King Bar", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=50.5, pick_rate=8.9, tier="B")
+    ),
+    
+    "luna": Hero(
+        id="luna",
+        name="Luna",
+        localized_name="Luna",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Nuker", "Pusher"],
+        description="Быстрый керри с Moon Glaives и Eclipse.",
+        strengths=["Быстрый фарм", "Высокий урон", "Eclipse", "Лунный блеск"],
+        weaknesses=["Хрупкая", "Короткая дальность", "Зависит от позиционирования"],
+        counters=HeroCounters(
+            weak_against=["Phantom Assassin", "Storm Spirit", "Anti-Mage", "Nyx Assassin"],
+            counter_items=["Blade Mail", "Heaven's Halberd", "Ghost Scepter", "Force Staff"],
+            countered_by={"heroes": ["Phantom Assassin", "Storm Spirit"], "description": "Блинкеры убивают быстро"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Manta Style", "Dragon Lance"],
+            late_game=["Satanic", "Butterfly", "Skadi", "Bloodthorn"],
+            situational=["Silver Edge", "Monkey King Bar", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=51.2, pick_rate=10.5, tier="A")
+    ),
+    
+    "razor": Hero(
+        id="razor",
+        name="Razor",
+        localized_name="Razor",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Durable", "Nuker"],
+        description="Танкующий керри с Static Link.",
+        strengths=["Static Link крадет урон", "Высокая живучесть", "Eye of the Storm"],
+        weaknesses=["Медленный", "Низкий урон без Link", "Кайтится"],
+        counters=HeroCounters(
+            weak_against=["Sniper", "Drow Ranger", "Viper", "Venomancer"],
+            counter_items=["Force Staff", "Ghost Scepter", "Heaven's Halberd", "Eul's Scepter"],
+            countered_by={"heroes": ["Sniper", "Drow Ranger"], "description": "Дальнобойные кайтят"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Phase Boots", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Sange and Yasha", "Aghanim's Scepter"],
+            late_game=["Satanic", "Butterfly", "Skadi", "Refresher Orb"],
+            situational=["Silver Edge", "Bloodthorn", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=49.2, pick_rate=6.8, tier="C")
+    ),
+    
+    "viper": Hero(
+        id="viper",
+        name="Viper",
+        localized_name="Viper",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Durable", "Disabler", "Nuker"],
+        description="Токсичный керри с Corrosive Skin.",
+        strengths=["Сильный на линии", "Замедление", "Танк", "Простой"],
+        weaknesses=["Медленный", "Нет мобильности", "Падает в лейте"],
+        counters=HeroCounters(
+            weak_against=["Sniper", "Drow Ranger", "Storm Spirit", "Anti-Mage"],
+            counter_items=["Black King Bar", "Force Staff", "Heaven's Halberd", "Eul's Scepter"],
+            countered_by={"heroes": ["Sniper", "Storm Spirit"], "description": "Мобильные герои убивают"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Phase Boots", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Dragon Lance", "Aghanim's Scepter"],
+            late_game=["Satanic", "Butterfly", "Skadi", "Bloodthorn"],
+            situational=["Silver Edge", "Hurricane Pike", "Monkey King Bar"]
+        ),
+        stats=HeroStats(win_rate=51.8, pick_rate=8.2, tier="B")
+    ),
+    
+    "weaver": Hero(
+        id="weaver",
+        name="Weaver",
+        localized_name="Weaver",
+        primary_attr="agi",
+        attack_type="Ranged",
+        roles=["Carry", "Escape"],
+        description="Мобильный керри с Shukuchi и Time Lapse.",
+        strengths=["Высокая мобильность", "Time Lapse", "Трудно убить", "Geminate Attack"],
+        weaknesses=["Хрупкий", "Зависим от маны", "Контрится Detection"],
+        counters=HeroCounters(
+            weak_against=["Slardar", "Bounty Hunter", "Spirit Breaker", "Axe"],
+            counter_items=["Dust of Appearance", "Sentry Ward", "Gem of True Sight", "Silver Edge"],
+            countered_by={"heroes": ["Slardar", "Bounty Hunter"], "description": "True Sight убивает инвиз"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Circlet", "Branches"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Linken's Sphere", "Black King Bar", "Dragon Lance"],
+            late_game=["Satanic", "Butterfly", "Bloodthorn", "Swift Blink"],
+            situational=["Silver Edge", "Monkey King Bar", "Hurricane Pike"]
+        ),
+        stats=HeroStats(win_rate=50.5, pick_rate=7.5, tier="B")
+    ),
+    
+    "ursa": Hero(
+        id="ursa",
+        name="Ursa",
+        localized_name="Ursa",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Durable", "Disabler", "Jungler"],
+        description="Берсерк с Fury Swipes.",
+        strengths=["Огромный урон", "Fury Swipes", "Enrage", "Быстрый Рошан"],
+        weaknesses=["Медленный", "Нет мобильности", "Кайтится"],
+        counters=HeroCounters(
+            weak_against=["Viper", "Venomancer", "Drow Ranger", "Phantom Lancer"],
+            counter_items=["Force Staff", "Ghost Scepter", "Heaven's Halberd", "Eul's Scepter"],
+            countered_by={"heroes": ["Viper", "Phantom Lancer"], "description": "Замедление и иллюзии"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Stout Shield", "Iron Branch"],
+            early_game=["Phase Boots", "Magic Wand", "Morbid Mask"],
+            mid_game=["Black King Bar", "Sange and Yasha", "Basher"],
+            late_game=["Satanic", "Butterfly", "Abyssal Blade", "Swift Blink"],
+            situational=["Silver Edge", "Bloodthorn", "Skadi"]
+        ),
+        stats=HeroStats(win_rate=51.2, pick_rate=9.8, tier="A")
+    ),
+    
+    "bloodseeker": Hero(
+        id="bloodseeker",
+        name="Bloodseeker",
+        localized_name="Bloodseeker",
+        primary_attr="agi",
+        attack_type="Melee",
+        roles=["Carry", "Disabler", "Jungler", "Nuker"],
+        description="Керри с Rupture и Thirst.",
+        strengths=["Высокая скорость", "Rupture", "Thirst", "Быстрый фарм"],
+        weaknesses=["Хрупкий", "Зависит от ультимейта", "Контрится TP"],
+        counters=HeroCounters(
+            weak_against=["Phantom Assassin", "Anti-Mage", "Storm Spirit", "Nyx Assassin"],
+            counter_items=["Town Portal Scroll", "Force Staff", "Ghost Scepter", "Glimmer Cape"],
+            countered_by={"heroes": ["Phantom Assassin", "Anti-Mage"], "description": "Блинкеры убивают"}
+        ),
+        builds=HeroBuild(
+            starting_items=["Tango", "Salve", "Quelling Blade", "Circlet"],
+            early_game=["Power Treads", "Magic Wand", "Wraith Band"],
+            mid_game=["Black King Bar", "Sange and Yasha", "Maelstrom"],
+            late_game=["Satanic", "Butterfly", "Bloodthorn", "Swift Blink"],
+            situational=["Silver Edge", "Monkey King Bar", "Skadi"]
+        ),
+        stats=HeroStats(win_rate=48.5, pick_rate=6.2, tier="C")
     ),
 }
 
@@ -486,6 +971,7 @@ HEROES_BY_NAME = {}
 for hero_id, hero in HEROES_DATABASE.items():
     HEROES_BY_NAME[hero_id] = hero
     HEROES_BY_NAME[hero.name.lower()] = hero
+    HEROES_BY_NAME[hero.name.lower().replace(" ", "")] = hero
     if hero.localized_name:
         HEROES_BY_NAME[hero.localized_name.lower()] = hero
 
@@ -494,7 +980,7 @@ for hero_id, hero in HEROES_DATABASE.items():
 class HeroService:
     @staticmethod
     def find_hero(query: str) -> Optional[Hero]:
-        query = query.lower().strip().replace(" ", "_").replace("-", "_")
+        query = query.lower().strip().replace(" ", "_").replace("-", "_").replace(" ", "")
         return HEROES_BY_NAME.get(query)
     
     @staticmethod
@@ -506,9 +992,8 @@ class HeroService:
             search_terms = [
                 hero.id,
                 hero.name.lower(),
-                hero.localized_name.lower() if hero.localized_name else "",
                 hero.name.lower().replace(" ", ""),
-                hero.name.lower().replace("-", ""),
+                hero.localized_name.lower() if hero.localized_name else "",
             ]
             
             if any(query in term for term in search_terms if term):
@@ -535,17 +1020,18 @@ class HeroService:
             "✅ *Сильные стороны:*"
         ]
         
-        for strength in hero.strengths:
+        for strength in hero.strengths[:3]:
             lines.append(f"  • {strength}")
             
         lines.extend(["", "❌ *Слабости:*"])
-        for weakness in hero.weaknesses:
+        for weakness in hero.weaknesses[:3]:
             lines.append(f"  • {weakness}")
             
         if hero.stats:
+            tier_emoji = {"S": "🔴", "A": "🟠", "B": "🟡", "C": "🟢", "D": "⚪"}.get(hero.stats.tier, "❓")
             lines.extend([
                 "",
-                f"📈 Статистика: WR {hero.stats.win_rate}% | Pick {hero.stats.pick_rate}% | Tier {hero.stats.tier}"
+                f"{tier_emoji} *Тир {hero.stats.tier}* | Винрейт: {hero.stats.win_rate}% | Пик: {hero.stats.pick_rate}%"
             ])
             
         return "\n".join(lines)
@@ -560,11 +1046,11 @@ class HeroService:
             "⚔️ *Герои-контрпики:*"
         ]
         
-        for i, counter in enumerate(hero.counters.countered_by.get('heroes', []), 1):
+        for i, counter in enumerate(hero.counters.countered_by.get('heroes', [])[:5], 1):
             lines.append(f"{i}. {counter}")
             
         lines.extend(["", "🎒 *Контр-предметы:*"])
-        for item in hero.counters.countered_by.get('items', []):
+        for item in hero.counters.counter_items[:5]:
             lines.append(f"  • {item}")
             
         return "\n".join(lines)
@@ -582,86 +1068,117 @@ class HeroService:
             f"  {', '.join(build.starting_items)}",
             "",
             "⚡ *Ранняя игра:*",
-            f"  {' → '.join(build.early_game)}",
+            f"  {' → '.join(build.early_game[:3])}",
             "",
-            "🔥 *Середина игры:*",
-            f"  {' → '.join(build.mid_game)}",
+            "🔥 *Мид:*",
+            f"  {' → '.join(build.mid_game[:3])}",
             "",
             "👑 *Лейт:*",
-            f"  {' → '.join(build.late_game)}",
+            f"  {' → '.join(build.late_game[:3])}",
         ]
         
         if build.situational:
-            lines.extend([
-                "",
-                "🔄 *Ситуативно:*",
-                f"  {', '.join(build.situational)}"
-            ])
+            lines.extend(["", "🔄 *Ситуативно:*", f"  {', '.join(build.situational[:3])}"])
             
         return "\n".join(lines)
 
 # ==================== ML ПРЕДИКТОР ====================
 
 class MatchPredictor:
-    WEIGHTS = {
-        "win_rate": 0.25,
-        "synergy": 0.20,
-        "counter": 0.25,
-        "draft": 0.15,
-        "meta": 0.15
-    }
+    """ML-предиктор на основе синергий и контрпиков"""
     
+    # Синергии между героями (бонус к силе команды)
     SYNERGIES = {
-        ("slardar", "spectre"): 15,
-        ("dazzle", "axe"): 12,
-        ("magnus", "melee_carry"): 10,
-        ("dark_seer", "melee_carry"): 10,
-        ("crystal_maiden", "mana_hungry"): 8,
+        # Carry + Support
+        ("phantom_lancer", "magnus"): 15,
+        ("sven", "magnus"): 15,
+        ("melee_carry", "magnus"): 10,
+        ("melee_carry", "dark_seer"): 10,
+        
+        # Mid + Support
+        ("storm_spirit", "crystal_maiden"): 12,
+        ("invoker", "crystal_maiden"): 10,
+        ("mana_hungry", "crystal_maiden"): 8,
+        
+        # Offlane + Support
+        ("slardar", "dazzle"): 12,
+        ("axe", "dazzle"): 10,
+        
+        # Teamfight комбо
+        ("enigma", "magnus"): 15,
+        ("faceless_void", "magnus"): 12,
+        ("tidehunter", "enigma"): 10,
+        
+        # Пуш
+        ("shadow_shaman", "luna"): 10,
+        ("shadow_shaman", "terrorblade"): 10,
+        
+        # Хил + Танк
         ("omniknight", "melee_core"): 8,
-        ("shadow_shaman", "pusher"): 10,
-        ("lich", "teamfight"): 8,
+        ("dazzle", "axe"): 10,
     }
     
-    def __init__(self):
-        pass
+    # Антисинергии (штраф)
+    ANTISYNERGIES = {
+        ("anti_mage", "medusa"): -10,  # Оба нуждаются в фарме
+        ("invoker", "meepo"): -8,      # Сложная механика
+        ("techies", "fast_game"): -15, # Затягивает игру
+    }
     
     async def predict(self, radiant: List[str], dire: List[str]) -> MatchPrediction:
-        radiant_analysis = await self._analyze_team(radiant, "Radiant")
-        dire_analysis = await self._analyze_team(dire, "Dire")
+        """Главный метод предсказания"""
         
-        counter_matchups = self._analyze_counter_matchups(radiant, dire)
+        # Анализируем обе команды
+        rad_analysis = self._analyze_team(radiant, "Radiant")
+        dire_analysis = self._analyze_team(dire, "Dire")
         
-        rad_prob, dire_prob = self._calculate_probabilities(
-            radiant_analysis, dire_analysis, counter_matchups
+        # Находим контрматчапы
+        counter_matchups = self._find_counter_matchups(radiant, dire)
+        
+        # Рассчитываем вероятности
+        rad_prob, dire_prob = self._calculate_win_probability(
+            rad_analysis, dire_analysis, counter_matchups
         )
         
+        # Определяем результат
         result, confidence = self._determine_result(rad_prob, dire_prob)
         
+        # Извлекаем ключевые факторы
         key_factors = self._extract_key_factors(
-            radiant_analysis, dire_analysis, rad_prob, dire_prob
+            rad_analysis, dire_analysis, rad_prob, dire_prob, counter_matchups
         )
         
+        # Риски
+        risk_factors = self._extract_risks(radiant, dire, rad_analysis, dire_analysis)
+        
         return MatchPrediction(
-            radiant=radiant_analysis,
+            radiant=rad_analysis,
             dire=dire_analysis,
             result=result,
             confidence=confidence,
             win_probability_radiant=rad_prob,
             win_probability_dire=dire_prob,
             key_factors=key_factors,
-            risk_factors=self._extract_risks(radiant_analysis, dire_analysis),
+            risk_factors=risk_factors,
             counter_matchups=counter_matchups
         )
     
-    async def _analyze_team(self, heroes: List[str], team_name: str) -> TeamAnalysis:
+    def _analyze_team(self, heroes: List[str], team_name: str) -> TeamAnalysis:
+        """Анализ одной команды"""
+        
+        # Базовые метрики
         synergy = self._calculate_synergy(heroes)
         draft = self._evaluate_draft(heroes)
-        meta = self._evaluate_meta_score(heroes)
+        meta = self._calculate_meta_score(heroes)
         
+        # Анализ сильных/слабых сторон
         strengths, weaknesses = self._analyze_strengths_weaknesses(heroes)
+        
+        # Ключевые герои
         key_heroes = self._identify_key_heroes(heroes)
         
-        win_prob = (synergy + draft + meta) / 3
+        # Предварительная вероятность победы
+        win_prob = (synergy * 0.4 + draft * 0.3 + meta * 0.3)
         
         return TeamAnalysis(
             team_name=team_name,
@@ -676,62 +1193,139 @@ class MatchPredictor:
         )
     
     def _calculate_synergy(self, heroes: List[str]) -> float:
+        """Расчет синергии команды (0-100)"""
         if len(heroes) < 2:
             return 50.0
-            
-        score = 50.0
+        
+        score = 50.0  # Базовое значение
         hero_ids = [h.lower().replace(" ", "_") for h in heroes]
         
+        # Проверяем синергии
         for (h1, h2), bonus in self.SYNERGIES.items():
-            if h1 in hero_ids and h2 in hero_ids:
+            # Прямой порядок
+            if self._check_hero_match(h1, hero_ids) and self._check_hero_match(h2, hero_ids):
                 score += bonus
-            elif h2 in hero_ids and h1 in hero_ids:
+            # Обратный порядок
+            elif self._check_hero_match(h2, hero_ids) and self._check_hero_match(h1, hero_ids):
                 score += bonus
         
-        # Бонус за баланс
-        has_carry = any(HeroService.find_hero(h) and "Carry" in HeroService.find_hero(h).roles for h in heroes)
-        has_init = any(HeroService.find_hero(h) and any(r in HeroService.find_hero(h).roles for r in ["Initiator", "Disabler"]) for h in heroes)
+        # Проверяем антисинергии
+        for (h1, h2), penalty in self.ANTISYNERGIES.items():
+            if self._check_hero_match(h1, hero_ids) and self._check_hero_match(h2, hero_ids):
+                score += penalty
         
-        if has_carry and has_init:
+        # Бонус за сбалансированный состав
+        roles = self._count_roles(heroes)
+        if roles.get("carry", 0) >= 1 and roles.get("support", 0) >= 1:
             score += 10
+        if roles.get("initiator", 0) >= 1:
+            score += 5
+        
+        # Штраф за отсутствие керри
+        if roles.get("carry", 0) == 0:
+            score -= 20
         
         return max(0, min(100, score))
     
-    def _evaluate_draft(self, heroes: List[str]) -> float:
-        score = 50.0
+    def _check_hero_match(self, pattern: str, hero_ids: List[str]) -> bool:
+        """Проверяет соответствие героя паттерну"""
+        pattern = pattern.lower()
         
-        if len(heroes) < 2:
-            return score
+        for hero_id in hero_ids:
+            # Точное совпадение
+            if hero_id == pattern:
+                return True
+            # Проверка ролей (melee_carry, mana_hungry и т.д.)
+            hero = HeroService.find_hero(hero_id)
+            if not hero:
+                continue
+            
+            # Проверка атрибутов
+            if pattern == "melee_carry" and hero.attack_type == "Melee" and "Carry" in hero.roles:
+                return True
+            if pattern == "mana_hungry" and hero.primary_attr == "int":
+                return True
+            if pattern == "fast_game" and "Pusher" in hero.roles:
+                return True
         
-        has_carry = False
-        has_init = False
-        melee = 0
-        ranged = 0
+        return False
+    
+    def _count_roles(self, heroes: List[str]) -> Dict[str, int]:
+        """Подсчет ролей в команде"""
+        roles = {"carry": 0, "support": 0, "initiator": 0, "mid": 0, "offlane": 0}
         
         for h in heroes:
             hero = HeroService.find_hero(h)
             if not hero:
                 continue
-            if "Carry" in hero.roles:
-                has_carry = True
-            if any(r in hero.roles for r in ["Initiator", "Disabler"]):
-                has_init = True
-            if hero.attack_type == "Melee":
-                melee += 1
-            else:
-                ranged += 1
+            
+            hero_roles = [r.lower() for r in hero.roles]
+            
+            if any(r in hero_roles for r in ["carry", "nuker"]):
+                roles["carry"] += 1
+            if any(r in hero_roles for r in ["support", "healer", "disabler"]):
+                roles["support"] += 1
+            if any(r in hero_roles for r in ["initiator"]):
+                roles["initiator"] += 1
         
-        if has_carry and has_init:
+        return roles
+    
+    def _evaluate_draft(self, heroes: List[str]) -> float:
+        """Оценка качества драфта (0-100)"""
+        score = 50.0
+        
+        if len(heroes) < 2:
+            return score
+        
+        # Проверяем баланс
+        has_carry = False
+        has_support = False
+        has_initiator = False
+        melee_count = 0
+        ranged_count = 0
+        
+        for h in heroes:
+            hero = HeroService.find_hero(h)
+            if not hero:
+                continue
+            
+            roles = [r.lower() for r in hero.roles]
+            
+            if any(r in roles for r in ["carry", "nuker"]):
+                has_carry = True
+            if any(r in roles for r in ["support", "healer"]):
+                has_support = True
+            if any(r in roles for r in ["initiator", "disabler"]):
+                has_initiator = True
+            
+            if hero.attack_type == "Melee":
+                melee_count += 1
+            else:
+                ranged_count += 1
+        
+        # Бонусы
+        if has_carry:
             score += 15
-        if melee > 0 and ranged > 0:
+        if has_support:
             score += 10
+        if has_initiator:
+            score += 10
+        if melee_count > 0 and ranged_count > 0:
+            score += 10  # Разнообразие
+        
+        # Штрафы
+        if not has_carry:
+            score -= 20
+        if len(heroes) < 5:
+            score -= (5 - len(heroes)) * 10
         
         return max(0, min(100, score))
     
-    def _evaluate_meta_score(self, heroes: List[str]) -> float:
+    def _calculate_meta_score(self, heroes: List[str]) -> float:
+        """Оценка соответствия мете (0-100)"""
         if not heroes:
             return 0
-            
+        
         total = 0
         for h in heroes:
             hero = HeroService.find_hero(h)
@@ -739,94 +1333,122 @@ class MatchPredictor:
                 tier_score = {"S": 100, "A": 85, "B": 70, "C": 55, "D": 40}.get(hero.stats.tier, 50)
                 total += tier_score
             else:
-                total += 50
-                
+                total += 50  # Среднее по умолчанию
+        
         return total / len(heroes)
     
     def _analyze_strengths_weaknesses(self, heroes: List[str]) -> Tuple[List[str], List[str]]:
+        """Анализ сильных и слабых сторон"""
         strengths = []
         weaknesses = []
         
-        has_carry = False
-        has_init = False
+        roles = self._count_roles(heroes)
         
-        for h in heroes:
-            hero = HeroService.find_hero(h)
-            if not hero:
-                continue
-            if "Carry" in hero.roles:
-                has_carry = True
-            if any(r in hero.roles for r in ["Initiator", "Disabler"]):
-                has_init = True
-        
-        if has_carry:
+        # Сильные стороны
+        if roles.get("carry", 0) >= 1:
             strengths.append("✅ Есть керри для лейта")
-        else:
-            weaknesses.append("❌ Нет явного керри")
-            
-        if has_init:
+        if roles.get("support", 0) >= 1:
+            strengths.append("✅ Есть поддержка")
+        if roles.get("initiator", 0) >= 1:
             strengths.append("✅ Есть инициатор")
-        else:
-            weaknesses.append("❌ Нет инициатора")
+        
+        # Слабые стороны
+        if roles.get("carry", 0) == 0:
+            weaknesses.append("❌ Нет явного керри")
+        if roles.get("support", 0) == 0:
+            weaknesses.append("❌ Нет поддержки")
+        if roles.get("initiator", 0) == 0:
+            weaknesses.append("⚠️ Нет инициатора")
         
         return strengths, weaknesses
     
     def _identify_key_heroes(self, heroes: List[str]) -> List[str]:
+        """Определение ключевых героев"""
         key = []
+        
         for h in heroes:
             hero = HeroService.find_hero(h)
             if not hero:
                 continue
-            if "Carry" in hero.roles:
+            
+            roles = hero.roles
+            
+            if "Carry" in roles:
                 key.append(f"{hero.name} (Керри)")
-            elif any(r in hero.roles for r in ["Initiator", "Disabler"]):
+            elif "Initiator" in roles:
                 key.append(f"{hero.name} (Инициатор)")
+            elif any(r in ["Magnus", "Enigma", "Faceless Void"] for r in [hero.name]):
+                key.append(f"{hero.name} (Teamfight)")
+        
         return key[:3]
     
-    def _analyze_counter_matchups(self, radiant: List[str], dire: List[str]) -> List[Dict]:
+    def _find_counter_matchups(self, radiant: List[str], dire: List[str]) -> List[Dict]:
+        """Поиск контрматчапов между командами"""
         matchups = []
         
         for rad_hero in radiant:
+            rad = HeroService.find_hero(rad_hero)
+            if not rad:
+                continue
+            
             for dire_hero in dire:
-                rad = HeroService.find_hero(rad_hero)
                 dire_h = HeroService.find_hero(dire_hero)
-                
-                if not rad or not dire_h:
+                if not dire_h:
                     continue
-                    
-                if dire_hero.lower() in [h.lower() for h in rad.counters.weak_against]:
+                
+                # Проверяем контрпики
+                rad_weak = [w.lower() for w in rad.counters.weak_against]
+                dire_weak = [w.lower() for w in dire_h.counters.weak_against]
+                
+                if dire_hero.lower() in rad_weak:
                     matchups.append({
-                        "type": "bad",
-                        "text": f"⚠️ {rad.name} слаб против {dire_h.name}"
+                        "type": "bad_for_radiant",
+                        "text": f"⚠️ {rad.name} слаб против {dire_h.name}",
+                        "impact": -10
                     })
-                elif rad_hero.lower() in [h.lower() for h in dire_h.counters.weak_against]:
+                elif rad_hero.lower() in dire_weak:
                     matchups.append({
-                        "type": "good",
-                        "text": f"✅ {rad.name} силен против {dire_h.name}"
+                        "type": "good_for_radiant",
+                        "text": f"✅ {rad.name} силен против {dire_h.name}",
+                        "impact": +10
                     })
-                    
+        
         return matchups[:5]
     
-    def _calculate_probabilities(self, rad: TeamAnalysis, dire: TeamAnalysis, matchups: List[Dict]) -> Tuple[float, float]:
-        rad_score = rad.synergy_score * 0.3 + rad.draft_score * 0.3 + rad.meta_score * 0.2
-        dire_score = dire.synergy_score * 0.3 + dire.draft_score * 0.3 + dire.meta_score * 0.2
+    def _calculate_win_probability(
+        self, 
+        rad: TeamAnalysis, 
+        dire: TeamAnalysis,
+        matchups: List[Dict]
+    ) -> Tuple[float, float]:
+        """Расчет вероятности победы"""
         
-        # Учет контрпиков
-        good_matchups = sum(1 for m in matchups if m["type"] == "good")
-        bad_matchups = sum(1 for m in matchups if m["type"] == "bad")
+        # Базовые скоры
+        rad_score = (
+            rad.synergy_score * 0.35 +
+            rad.draft_score * 0.25 +
+            rad.meta_score * 0.20
+        )
         
-        counter_bonus = (good_matchups - bad_matchups) * 5
-        rad_score += counter_bonus
-        dire_score -= counter_bonus
+        dire_score = (
+            dire.synergy_score * 0.35 +
+            dire.draft_score * 0.25 +
+            dire.meta_score * 0.20
+        )
         
+        # Учет контрматчапов
+        matchup_bonus = sum(m.get("impact", 0) for m in matchups)
+        rad_score += matchup_bonus * 0.2
+        
+        # Нормализация в вероятности
         total = rad_score + dire_score
         if total == 0:
             return 50.0, 50.0
-            
+        
         rad_prob = (rad_score / total) * 100
         dire_prob = 100 - rad_prob
         
-        # Шум для реализма
+        # Добавляем случайность для реализма (±3%)
         noise = random.uniform(-3, 3)
         rad_prob = max(5, min(95, rad_prob + noise))
         dire_prob = 100 - rad_prob
@@ -834,6 +1456,7 @@ class MatchPredictor:
         return rad_prob, dire_prob
     
     def _determine_result(self, rad_prob: float, dire_prob: float) -> Tuple[PredictionResult, float]:
+        """Определение результата и уверенности"""
         diff = abs(rad_prob - dire_prob)
         
         if diff < 5:
@@ -843,50 +1466,87 @@ class MatchPredictor:
         else:
             return PredictionResult.DIRE_WIN, diff
     
-    def _extract_key_factors(self, rad: TeamAnalysis, dire: TeamAnalysis, rad_p: float, dire_p: float) -> List[str]:
+    def _extract_key_factors(
+        self,
+        rad: TeamAnalysis,
+        dire: TeamAnalysis,
+        rad_p: float,
+        dire_p: float,
+        matchups: List[Dict]
+    ) -> List[str]:
+        """Извлечение ключевых факторов"""
         factors = []
         
+        # Сравнение синергий
         if rad.synergy_score > dire.synergy_score + 10:
-            factors.append(f"🤝 Лучшая синергия у Света")
+            factors.append(f"🤝 Лучшая синергия у Света (+{rad.synergy_score - dire.synergy_score:.0f})")
         elif dire.synergy_score > rad.synergy_score + 10:
-            factors.append(f"🤝 Лучшая синергия у Тьмы")
-            
+            factors.append(f"🤝 Лучшая синергия у Тьмы (+{dire.synergy_score - rad.synergy_score:.0f})")
+        
+        # Сравнение драфта
+        if rad.draft_score > dire.draft_score + 10:
+            factors.append("📋 Состав Света более сбалансирован")
+        elif dire.draft_score > rad.draft_score + 10:
+            factors.append("📋 Состав Тьмы более сбалансирован")
+        
+        # Мета
         if rad.meta_score > dire.meta_score + 10:
-            factors.append("📈 Пик Света сильнее в мете")
+            factors.append("📈 Пик Света сильнее в текущей мете")
         elif dire.meta_score > rad.meta_score + 10:
-            factors.append("📈 Пик Тьмы сильнее в мете")
-            
-        return factors
+            factors.append("📈 Пик Тьмы сильнее в текущей мете")
+        
+        # Контрматчапы
+        good_matchups = [m for m in matchups if m["type"] == "good_for_radiant"]
+        bad_matchups = [m for m in matchups if m["type"] == "bad_for_radiant"]
+        
+        if good_matchups:
+            factors.append(f"🎯 {len(good_matchups)} выигрышных матчапа у Света")
+        if bad_matchups:
+            factors.append(f"⚠️ {len(bad_matchups)} проигрышных матчапа у Света")
+        
+        return factors[:4]
     
-    def _extract_risks(self, rad: TeamAnalysis, dire: TeamAnalysis) -> List[str]:
+    def _extract_risks(
+        self,
+        radiant: List[str],
+        dire: List[str],
+        rad: TeamAnalysis,
+        dire_a: TeamAnalysis
+    ) -> List[str]:
+        """Извлечение рисков"""
         risks = []
-        if len(rad.heroes) < 5:
-            risks.append(f"⚠️ Состав Света неполный ({len(rad.heroes)}/5)")
-        if len(dire.heroes) < 5:
-            risks.append(f"⚠️ Состав Тьмы неполный ({len(dire.heroes)}/5)")
+        
+        if len(radiant) < 5:
+            risks.append(f"⚠️ Состав Света неполный ({len(radiant)}/5)")
+        if len(dire) < 5:
+            risks.append(f"⚠️ Состав Тьмы неполный ({len(dire)}/5)")
+        
+        if not rad.strengths:
+            risks.append("⚠️ У Света нет явных сильных сторон")
+        if not dire_a.strengths:
+            risks.append("⚠️ У Тьмы нет явных сильных сторон")
+        
         return risks
 
-# ==================== ОБРАБОТЧИКИ КОМАНД ====================
+# ==================== ОБРАБОТЧИКИ ====================
 
 class CommandHandlers:
     @staticmethod
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
-        logger.info(f"User {user.id} started bot")
-        
-        text = f"""🎮 *Dota 2 Counter Bot*
+        text = f"""🎮 *Dota 2 Counter Bot v2.1*
 
 Привет, {user.first_name}!
 
 *Команды:*
-• `/hero [имя]` — информация о герое
-• `/predict [A] vs [B]` — предсказать победителя
-• `/stats [имя]` — статистика
-• `/meta` — текущая мета
+• `/hero [имя]` — информация о герое (30+ героев)
+• `/predict [A] vs [B]` — ML-предсказание победителя
+• `/counter [имя]` — контрпики
+• `/build [имя]` — рекомендуемый билд
 • `/list` — список героев
+• `/help` — помощь
 
 Просто напиши имя героя!"""
-        
         await update.message.reply_text(text, parse_mode='Markdown')
     
     @staticmethod
@@ -895,11 +1555,12 @@ class CommandHandlers:
 
 /hero [имя] — информация о герое
 /counter [имя] — контрпики
-/predict [A] vs [B] — ML-предсказание
-/stats [имя] — винрейт, тир
-/meta — топ пиков
-/search [запрос] — поиск
-/list — все герои"""
+/predict [A] vs [B] — ML-предсказание матча
+/build [имя] — рекомендуемый билд
+/list — все герои в базе
+
+*Пример предсказания:*
+`/predict kez void slardar vs muerta ember tide`"""
         await update.message.reply_text(text, parse_mode='Markdown')
     
     @staticmethod
@@ -911,16 +1572,17 @@ class CommandHandlers:
             main_role = hero.roles[0]
             by_role.setdefault(main_role, []).append(hero.name)
         
-        lines = ["📋 *Герои в базе:*\n"]
+        lines = [f"📋 *Героев в базе: {len(heroes)}*\n"]
+        
         for role, names in sorted(by_role.items()):
             lines.append(f"*{role}:* {', '.join(sorted(names))}")
         
         text = "\n".join(lines)
         
+        # Разбиваем если длинно
         if len(text) > 4000:
-            # Разбиваем на части
-            for i in range(0, len(lines), 20):
-                part = "\n".join(lines[i:i+20])
+            for i in range(0, len(lines), 15):
+                part = "\n".join(lines[i:i+15])
                 await update.message.reply_text(part, parse_mode='Markdown')
         else:
             await update.message.reply_text(text, parse_mode='Markdown')
@@ -928,10 +1590,11 @@ class CommandHandlers:
     @staticmethod
     async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         heroes_count = len(HeroService.get_all_heroes())
-        text = f"""🤖 *Dota 2 Counter Bot v2.0*
+        text = f"""🤖 *Dota 2 Counter Bot v2.1*
 
-Героев в базе: {heroes_count}
-Функции: контрпики, билды, ML-предсказания
+Героев в базе: *{heroes_count}*
+ML-предиктор: ✅ Активен
+Функции: контрпики, билды, предсказания
 
 Создано для комьюнити Dota 2"""
         await update.message.reply_text(text, parse_mode='Markdown')
@@ -939,14 +1602,13 @@ class CommandHandlers:
 class HeroHandlers:
     @staticmethod
     def _create_keyboard(hero_name: str) -> InlineKeyboardMarkup:
-        keyboard = [
+        return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🛡️ Контрпики", callback_data=f"counter:{hero_name}"),
                 InlineKeyboardButton("⚔️ Билд", callback_data=f"build:{hero_name}")
             ],
             [InlineKeyboardButton("🔄 Другие герои", callback_data="list")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
+        ])
     
     @staticmethod
     async def hero_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -963,11 +1625,9 @@ class HeroHandlers:
             await update.message.reply_text("❌ Укажи имя героя: `/counter muerta`", parse_mode='Markdown')
             return
         
-        query = " ".join(context.args)
-        hero = HeroService.find_hero(query)
-        
+        hero = HeroService.find_hero(" ".join(context.args))
         if not hero:
-            await update.message.reply_text(f"❌ Герой '{query}' не найден")
+            await update.message.reply_text("❌ Герой не найден")
             return
         
         text = HeroService.format_counters(hero)
@@ -980,11 +1640,9 @@ class HeroHandlers:
             await update.message.reply_text("❌ Укажи имя героя: `/build void spirit`", parse_mode='Markdown')
             return
         
-        query = " ".join(context.args)
-        hero = HeroService.find_hero(query)
-        
+        hero = HeroService.find_hero(" ".join(context.args))
         if not hero:
-            await update.message.reply_text(f"❌ Герой '{query}' не найден")
+            await update.message.reply_text("❌ Герой не найден")
             return
         
         text = HeroService.format_build(hero)
@@ -997,11 +1655,10 @@ class HeroHandlers:
             await update.message.reply_text("❌ Укажи запрос: `/search void`", parse_mode='Markdown')
             return
         
-        query = " ".join(context.args)
-        matches = HeroService.search_heroes(query)
+        matches = HeroService.search_heroes(" ".join(context.args))
         
         if not matches:
-            await update.message.reply_text(f"❌ По запросу '{query}' ничего не найдено")
+            await update.message.reply_text("❌ Ничего не найдено")
             return
         
         if len(matches) == 1:
@@ -1009,7 +1666,7 @@ class HeroHandlers:
             return
         
         keyboard = [[InlineKeyboardButton(h.name, callback_data=f"hero:{h.name}")] for h in matches]
-        await update.message.reply_text(f"🔍 Найдено:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text("🔍 Найдено:", reply_markup=InlineKeyboardMarkup(keyboard))
     
     @staticmethod
     async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1030,7 +1687,7 @@ class HeroHandlers:
                 await HeroHandlers._show_hero(update, context, matches[0].name, is_callback=False)
             else:
                 keyboard = [[InlineKeyboardButton(h.name, callback_data=f"hero:{h.name}")] for h in matches[:5]]
-                await update.message.reply_text(f"🤔 Несколько вариантов:", reply_markup=InlineKeyboardMarkup(keyboard))
+                await update.message.reply_text("🤔 Несколько вариантов:", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             await update.message.reply_text(f"❓ Не нашел '{text}'. Используй `/search` или `/list`")
     
@@ -1039,13 +1696,7 @@ class HeroHandlers:
         hero = HeroService.find_hero(query)
         
         if not hero:
-            matches = HeroService.search_heroes(query)
-            if matches:
-                suggestions = ", ".join([h.name for h in matches[:3]])
-                text = f"❌ Не найдено. Возможно: {suggestions}?"
-            else:
-                text = f"❌ Герой '{query}' не найден"
-            
+            text = f"❌ Герой '{query}' не найден"
             if is_callback:
                 await update.callback_query.edit_message_text(text)
             else:
@@ -1064,7 +1715,7 @@ class PredictionHandlers:
     async def predict_quick(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not context.args:
             await update.message.reply_text(
-                "❌ Укажи составы: `/predict kez void slardar vs muerta ember tide`",
+                "❌ Укажи составы:\n`/predict kez void slardar vs muerta ember tide`",
                 parse_mode='Markdown'
             )
             return
@@ -1088,7 +1739,7 @@ class PredictionHandlers:
         valid_dire, errors_dire = self._validate(dire)
         
         if errors_rad or errors_dire:
-            text = "❌ *Ошибки:*\n" + "\n".join(errors_rad + errors_dire)
+            text = "❌ *Ошибки в названиях:*\n" + "\n".join(errors_rad + errors_dire)
             await update.message.reply_text(text, parse_mode='Markdown')
             return
         
@@ -1118,15 +1769,15 @@ class PredictionHandlers:
             predictor = MatchPredictor()
             pred = await predictor.predict(radiant, dire)
             
-            text = self._format(pred)
+            text = self._format_prediction(pred)
             
-            # Создаем callback data
-            rad_str = ",".join(radiant)
-            dire_str = ",".join(dire)
+            # Callback data (короткий)
+            rad_key = ",".join([h[:3] for h in radiant])
+            dire_key = ",".join([h[:3] for h in dire])
             
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📊 Детали", callback_data=f"details:{rad_str}:{dire_str}")],
-                [InlineKeyboardButton("🔄 Новый анализ", callback_data="predict_new")]
+                [InlineKeyboardButton("📊 Детали", callback_data=f"d:{rad_key}:{dire_key}")],
+                [InlineKeyboardButton("🔄 Новый анализ", callback_data="new")]
             ])
             
             await msg.edit_text(text, parse_mode='Markdown', reply_markup=keyboard)
@@ -1135,109 +1786,58 @@ class PredictionHandlers:
             logger.error(f"Prediction error: {e}")
             await msg.edit_text("❌ Ошибка анализа")
     
-    def _format(self, pred: MatchPrediction) -> str:
+    def _format_prediction(self, pred: MatchPrediction) -> str:
         lines = [
-            "🔮 *ПРЕДСКАЗАНИЕ МАТЧА*",
+            "🔮 *ПРЕДСКАЗАНИЕ МАТЧА (ML)*",
             "",
             f"🟢 *Свет:* {', '.join(pred.radiant.heroes)}",
             f"🔴 *Тьма:* {', '.join(pred.dire.heroes)}",
             "",
-            f"🏆 *Победитель:* {pred.get_winner_text()}",
+            f"🏆 *Вероятный победитель:*",
+            f"{pred.get_winner_text()}",
             "",
             f"📊 *Уверенность:* {pred.get_confidence_text()} ({pred.confidence:.1f}%)",
             "",
-            "*Факторы:*"
+            "*Ключевые факторы:*"
         ]
         
-        for f in pred.key_factors[:3]:
-            lines.append(f"• {f}")
+        for factor in pred.key_factors[:3]:
+            lines.append(f"• {factor}")
         
         if pred.risk_factors:
             lines.extend(["", "*⚠️ Риски:*"])
-            for r in pred.risk_factors[:2]:
-                lines.append(f"• {r}")
+            for risk in pred.risk_factors[:2]:
+                lines.append(f"• {risk}")
         
-        lines.append("")
-        lines.append("_Анализ: синергии, контрпики, мета_")
-        
-        return "\n".join(lines)
-    
-    async def show_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        
-        data = query.data.split(":")
-        if len(data) < 3:
-            return
-        
-        radiant = data[1].split(",")
-        dire = data[2].split(",")
-        
-        predictor = MatchPredictor()
-        pred = await predictor.predict(radiant, dire)
-        
-        lines = [
-            f"📊 *Детали: {pred.radiant.team_name} vs {pred.dire.team_name}*",
-            "",
-            f"*🟢 Свет ({pred.win_probability_radiant:.1f}%)*",
-            f"Синергия: {pred.radiant.synergy_score:.0f}/100",
-            f"Драфт: {pred.radiant.draft_score:.0f}/100",
-            f"Мета: {pred.radiant.meta_score:.0f}/100",
-        ]
-        
-        if pred.radiant.strengths:
-            lines.append("\n*Сильные стороны:*")
-            for s in pred.radiant.strengths[:3]:
-                lines.append(f"  {s}")
-        
-        if pred.radiant.weaknesses:
-            lines.append("\n*Слабости:*")
-            for w in pred.radiant.weaknesses[:3]:
-                lines.append(f"  {w}")
-        
+        # ML метрики
         lines.extend([
             "",
-            f"*🔴 Тьма ({pred.win_probability_dire:.1f}%)*",
-            f"Синергия: {pred.dire.synergy_score:.0f}/100",
-            f"Драфт: {pred.dire.draft_score:.0f}/100",
-            f"Мета: {pred.dire.meta_score:.0f}/100",
+            f"*📈 ML Метрики:*",
+            f"Синергия Света: {pred.radiant.synergy_score:.0f}/100",
+            f"Синергия Тьмы: {pred.dire.synergy_score:.0f}/100",
+            f"Драфт Света: {pred.radiant.draft_score:.0f}/100",
+            f"Драфт Тьмы: {pred.dire.draft_score:.0f}/100"
         ])
         
-        if pred.dire.strengths:
-            lines.append("\n*Сильные стороны:*")
-            for s in pred.dire.strengths[:3]:
-                lines.append(f"  {s}")
+        lines.append("")
+        lines.append("_Анализ: синергии, контрпики, мета, драфт_")
         
-        if pred.dire.weaknesses:
-            lines.append("\n*Слабости:*")
-            for w in pred.dire.weaknesses[:3]:
-                lines.append(f"  {w}")
-        
-        if pred.counter_matchups:
-            lines.extend(["", "*🎯 Матчапы:*"])
-            for m in pred.counter_matchups[:4]:
-                lines.append(f"  {m['text']}")
-        
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔙 Назад", callback_data=f"back:{','.join(radiant)}:{','.join(dire)}")
-        ]])
-        
-        await query.edit_message_text("\n".join(lines), parse_mode='Markdown', reply_markup=keyboard)
+        return "\n".join(lines)
 
 class StatsHandlers:
     @staticmethod
     async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("📊 Статистика из API в разработке. Используй `/hero [имя]` для базовой инфо.")
+        await update.message.reply_text("📊 Используй `/hero [имя]` для статистики героя")
     
     @staticmethod
     async def meta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         heroes = HeroService.get_all_heroes()
-        top = sorted(heroes, key=lambda h: h.stats.tier if h.stats else "Z")[:5]
+        top = sorted([h for h in heroes if h.stats], key=lambda h: {"S": 5, "A": 4, "B": 3, "C": 2, "D": 1}.get(h.stats.tier, 0), reverse=True)[:10]
         
-        lines = ["🌍 *Текущая мета (по тирам):*\n"]
+        lines = ["🌍 *Топ героев по тирам:*\n"]
         for h in top:
-            tier_emoji = {"S": "🔴", "A": "🟠", "B": "🟡", "C": "🟢", "D": "⚪"}.get(h.stats.tier if h.stats else "?", "❓")
-            lines.append(f"{tier_emoji} *{h.name}* — {h.roles[0]}")
+            tier_emoji = {"S": "🔴", "A": "🟠", "B": "🟡", "C": "🟢", "D": "⚪"}.get(h.stats.tier, "❓")
+            lines.append(f"{tier_emoji} *{h.name}* — {h.roles[0]} ({h.stats.win_rate}%)")
         
         await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
     
@@ -1247,14 +1847,11 @@ class StatsHandlers:
             await update.message.reply_text("❌ Укажи имя героя: `/counters kez`")
             return
         
-        hero_name = " ".join(context.args)
-        hero = HeroService.find_hero(hero_name)
-        
+        hero = HeroService.find_hero(" ".join(context.args))
         if not hero:
-            await update.message.reply_text(f"❌ Герой не найден")
+            await update.message.reply_text("❌ Герой не найден")
             return
         
-        # Показываем из базы
         text = HeroService.format_counters(hero)
         await update.message.reply_text(text, parse_mode='Markdown')
 
@@ -1287,19 +1884,6 @@ class CallbackHandlers:
                     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data=f"hero:{hero.name}")]])
                     await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
             
-            elif data.startswith("details:"):
-                await PredictionHandlers().show_details(update, context)
-            
-            elif data.startswith("back:"):
-                parts = data.split(":")
-                if len(parts) >= 3:
-                    radiant = parts[1].split(",")
-                    dire = parts[2].split(",")
-                    await PredictionHandlers()._make_prediction(update, radiant, dire)
-            
-            elif data == "predict_new":
-                await query.edit_message_text("🔮 Введи: `/predict [свет] vs [тьма]`", parse_mode='Markdown')
-            
             elif data == "list":
                 heroes = HeroService.get_all_heroes()
                 by_role = {}
@@ -1315,20 +1899,19 @@ class CallbackHandlers:
                         keyboard.append(row)
                 
                 await query.edit_message_text("📋 *Выбери героя:*", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+            
+            elif data == "new":
+                await query.edit_message_text("🔮 Введи: `/predict [свет] vs [тьма]`", parse_mode='Markdown')
         
         except Exception as e:
             logger.error(f"Callback error: {e}")
-            await query.edit_message_text("❌ Ошибка")
 
 class ErrorHandlers:
     @staticmethod
     async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Update {update} caused error {context.error}")
-        
         if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ Произошла ошибка. Попробуйте позже или используйте /help"
-            )
+            await update.effective_message.reply_text("❌ Произошла ошибка. Попробуйте позже.")
 
 # ==================== СОЗДАНИЕ ПРИЛОЖЕНИЯ ====================
 
@@ -1376,7 +1959,8 @@ def create_application():
 
 async def main():
     logger.info("=" * 50)
-    logger.info("Dota 2 Counter Bot v2.0")
+    logger.info("Dota 2 Counter Bot v2.1")
+    logger.info(f"Heroes: {len(HEROES_DATABASE)} | ML Predictor: Active")
     logger.info("=" * 50)
     
     if not BOT_TOKEN:
@@ -1395,7 +1979,6 @@ async def main():
             allowed_updates=["message", "callback_query"]
         )
         
-        # Keep alive
         while True:
             await asyncio.sleep(60)
             
